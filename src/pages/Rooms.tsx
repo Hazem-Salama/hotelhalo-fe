@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Edit, Trash2, Bed } from "lucide-react";
+import { Plus, Edit, Trash2, Bed, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 
 interface Room {
   id: string;
@@ -17,17 +18,9 @@ interface Room {
   capacity: number;
 }
 
-const initialRooms: Room[] = [
-  { id: "1", number: "101", type: "Standard", status: "available", price: 120, capacity: 2 },
-  { id: "2", number: "102", type: "Standard", status: "occupied", price: 120, capacity: 2 },
-  { id: "3", number: "201", type: "Deluxe", status: "available", price: 180, capacity: 3 },
-  { id: "4", number: "202", type: "Deluxe", status: "available", price: 180, capacity: 3 },
-  { id: "5", number: "301", type: "Suite", status: "occupied", price: 280, capacity: 4 },
-  { id: "6", number: "302", type: "Suite", status: "maintenance", price: 280, capacity: 4 },
-];
-
 const Rooms = () => {
-  const [rooms, setRooms] = useState<Room[]>(initialRooms);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [formData, setFormData] = useState<Partial<Room>>({
@@ -38,46 +31,80 @@ const Rooms = () => {
     capacity: 2,
   });
 
-  const handleAddRoom = () => {
+  useEffect(() => {
+    loadRooms();
+  }, []);
+
+  const loadRooms = async () => {
+    try {
+      setLoading(true);
+      const data = await api.getRooms();
+      setRooms(data);
+    } catch (error) {
+      toast.error("Failed to load rooms");
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddRoom = async () => {
     if (!formData.number || !formData.price) {
       toast.error("Please fill in all required fields");
       return;
     }
 
-    const newRoom: Room = {
-      id: Date.now().toString(),
-      number: formData.number!,
-      type: formData.type!,
-      status: formData.status as Room["status"],
-      price: formData.price!,
-      capacity: formData.capacity!,
-    };
+    try {
+      const newRoom = await api.createRoom({
+        number: formData.number,
+        type: formData.type,
+        status: formData.status,
+        price: formData.price,
+        capacity: formData.capacity,
+      });
 
-    setRooms([...rooms, newRoom]);
-    setIsAddDialogOpen(false);
-    setFormData({ number: "", type: "Standard", status: "available", price: 0, capacity: 2 });
-    toast.success("Room added successfully");
+      setRooms([...rooms, newRoom]);
+      setIsAddDialogOpen(false);
+      setFormData({ number: "", type: "Standard", status: "available", price: 0, capacity: 2 });
+      toast.success("Room added successfully");
+    } catch (error) {
+      toast.error("Failed to add room");
+      console.error(error);
+    }
   };
 
-  const handleUpdateRoom = () => {
+  const handleUpdateRoom = async () => {
     if (!editingRoom || !formData.number || !formData.price) {
       toast.error("Please fill in all required fields");
       return;
     }
 
-    setRooms(rooms.map(room => 
-      room.id === editingRoom.id 
-        ? { ...room, ...formData } as Room
-        : room
-    ));
-    setEditingRoom(null);
-    setFormData({ number: "", type: "Standard", status: "available", price: 0, capacity: 2 });
-    toast.success("Room updated successfully");
+    try {
+      await api.updateRoom(editingRoom.id, formData);
+
+      setRooms(rooms.map(room =>
+        room.id === editingRoom.id
+          ? { ...room, ...formData } as Room
+          : room
+      ));
+      setEditingRoom(null);
+      setFormData({ number: "", type: "Standard", status: "available", price: 0, capacity: 2 });
+      toast.success("Room updated successfully");
+    } catch (error) {
+      toast.error("Failed to update room");
+      console.error(error);
+    }
   };
 
-  const handleDeleteRoom = (id: string) => {
-    setRooms(rooms.filter(room => room.id !== id));
-    toast.success("Room deleted successfully");
+  const handleDeleteRoom = async (id: string) => {
+    try {
+      await api.deleteRoom(id);
+      setRooms(rooms.filter(room => room.id !== id));
+      toast.success("Room deleted successfully");
+    } catch (error) {
+      toast.error("Failed to delete room");
+      console.error(error);
+    }
   };
 
   const getStatusColor = (status: Room["status"]) => {
@@ -92,6 +119,14 @@ const Rooms = () => {
         return "bg-muted text-muted-foreground";
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

@@ -1,12 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, LogIn, LogOut, Calendar as CalendarIcon } from "lucide-react";
+import { Plus, LogIn, LogOut, Calendar as CalendarIcon, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 
 interface Booking {
   id: string;
@@ -19,41 +19,9 @@ interface Booking {
   totalAmount: number;
 }
 
-const initialBookings: Booking[] = [
-  {
-    id: "1",
-    guestName: "John Doe",
-    guestEmail: "john@example.com",
-    roomNumber: "101",
-    checkIn: "2025-11-06",
-    checkOut: "2025-11-08",
-    status: "checked-in",
-    totalAmount: 240,
-  },
-  {
-    id: "2",
-    guestName: "Jane Smith",
-    guestEmail: "jane@example.com",
-    roomNumber: "205",
-    checkIn: "2025-11-07",
-    checkOut: "2025-11-10",
-    status: "reserved",
-    totalAmount: 540,
-  },
-  {
-    id: "3",
-    guestName: "Mike Johnson",
-    guestEmail: "mike@example.com",
-    roomNumber: "312",
-    checkIn: "2025-11-05",
-    checkOut: "2025-11-07",
-    status: "checked-in",
-    totalAmount: 560,
-  },
-];
-
 const Bookings = () => {
-  const [bookings, setBookings] = useState<Booking[]>(initialBookings);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Booking>>({
     guestName: "",
@@ -65,49 +33,81 @@ const Bookings = () => {
     totalAmount: 0,
   });
 
-  const handleAddBooking = () => {
+  useEffect(() => {
+    loadBookings();
+  }, []);
+
+  const loadBookings = async () => {
+    try {
+      setLoading(true);
+      const data = await api.getBookings();
+      setBookings(data);
+    } catch (error) {
+      toast.error("Failed to load bookings");
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddBooking = async () => {
     if (!formData.guestName || !formData.roomNumber || !formData.checkIn || !formData.checkOut) {
       toast.error("Please fill in all required fields");
       return;
     }
 
-    const newBooking: Booking = {
-      id: Date.now().toString(),
-      guestName: formData.guestName!,
-      guestEmail: formData.guestEmail!,
-      roomNumber: formData.roomNumber!,
-      checkIn: formData.checkIn!,
-      checkOut: formData.checkOut!,
-      status: formData.status as Booking["status"],
-      totalAmount: formData.totalAmount!,
-    };
+    try {
+      const newBooking = await api.createBooking({
+        guestName: formData.guestName,
+        guestEmail: formData.guestEmail,
+        roomNumber: formData.roomNumber,
+        checkIn: formData.checkIn,
+        checkOut: formData.checkOut,
+        totalAmount: formData.totalAmount,
+      });
 
-    setBookings([...bookings, newBooking]);
-    setIsAddDialogOpen(false);
-    setFormData({
-      guestName: "",
-      guestEmail: "",
-      roomNumber: "",
-      checkIn: "",
-      checkOut: "",
-      status: "reserved",
-      totalAmount: 0,
-    });
-    toast.success("Booking created successfully");
+      setBookings([...bookings, newBooking]);
+      setIsAddDialogOpen(false);
+      setFormData({
+        guestName: "",
+        guestEmail: "",
+        roomNumber: "",
+        checkIn: "",
+        checkOut: "",
+        status: "reserved",
+        totalAmount: 0,
+      });
+      toast.success("Booking created successfully");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to create booking");
+      console.error(error);
+    }
   };
 
-  const handleCheckIn = (id: string) => {
-    setBookings(bookings.map(booking =>
-      booking.id === id ? { ...booking, status: "checked-in" as const } : booking
-    ));
-    toast.success("Guest checked in successfully");
+  const handleCheckIn = async (id: string) => {
+    try {
+      await api.updateBookingStatus(id, "checked-in");
+      setBookings(bookings.map(booking =>
+        booking.id === id ? { ...booking, status: "checked-in" as const } : booking
+      ));
+      toast.success("Guest checked in successfully");
+    } catch (error) {
+      toast.error("Failed to check in");
+      console.error(error);
+    }
   };
 
-  const handleCheckOut = (id: string) => {
-    setBookings(bookings.map(booking =>
-      booking.id === id ? { ...booking, status: "checked-out" as const } : booking
-    ));
-    toast.success("Guest checked out successfully");
+  const handleCheckOut = async (id: string) => {
+    try {
+      await api.updateBookingStatus(id, "checked-out");
+      setBookings(bookings.map(booking =>
+        booking.id === id ? { ...booking, status: "checked-out" as const } : booking
+      ));
+      toast.success("Guest checked out successfully");
+    } catch (error) {
+      toast.error("Failed to check out");
+      console.error(error);
+    }
   };
 
   const getStatusColor = (status: Booking["status"]) => {
@@ -122,6 +122,14 @@ const Bookings = () => {
         return "bg-muted text-muted-foreground";
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
